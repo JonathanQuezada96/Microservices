@@ -1,11 +1,7 @@
-using MediatR;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.OpenApi;
+using Scalar.AspNetCore;
 using Ticketing.command.Application;
 using Ticketing.command.Features.Apis;
-using Ticketing.command.Features.Tickets;
 using Ticketing.command.Infrastructure;
-using static Ticketing.command.Features.Tickets.TicketCreate;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,9 +22,19 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    // MapOpenApi expone la documentación OpenAPI/Swagger solo en desarrollo.
-    // En producción este endpoint debería estar deshabilitado por seguridad.
-    app.MapOpenApi();
+  // MapOpenApi expone la documentación OpenAPI/Swagger solo en desarrollo.
+  // En producción este endpoint debería estar deshabilitado por seguridad.
+  app.MapOpenApi();
+  
+  // Scalar es una interfaz de usuario moderna (alternativa a Swagger) para visualizar y probar APIs.
+  // Aquí estamos configurando cómo se verá la documentación interactiva de nuestra API.
+  app.MapScalarApiReference(opt =>
+  {
+    opt.Title = "Microservice Command con scalar"; // Título de la página de documentación
+    opt.DarkMode = true; // Forzar el modo oscuro para una mejor apariencia
+    opt.Theme = ScalarTheme.Purple; // Definimos el tema de color púrpura
+    opt.DefaultHttpClient = new(ScalarTarget.Http, ScalarClient.Http11); // Cliente por defecto para probar la API desde la interfaz
+  });
 }
 
 app.UseHttpsRedirection();
@@ -52,12 +58,10 @@ app.UseHttpsRedirection();
 //  return Results.Ok(result);
 //}).WithName("CreateTicket");
 
-//app.MapMinimalApisEndpoints();
-//app.Run();
+// Escanea el proyecto y registra automáticamente todos los endpoints definidos 
+// en las clases que implementan IMinimalApi (como nuestro TicketCreate.cs).
+app.MapMinimalApisEndpoints();
 
-// Record de prueba de la plantilla por defecto — puede eliminarse cuando
-// se implementen los endpoints reales del microservicio.
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+// Arrancamos la aplicación web para que empiece a escuchar peticiones HTTP entrantes.
+app.Run();
+

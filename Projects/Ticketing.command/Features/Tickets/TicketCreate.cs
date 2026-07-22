@@ -14,11 +14,26 @@ using static Ticketing.command.Features.Tickets.TicketCreate;
 
 namespace Ticketing.command.Features.Tickets
 {
-  public class TicketCreate : IMinimalApi
+  public sealed class TicketCreate : IMinimalApi
   {
     public void AddEndpoint(IEndpointRouteBuilder endpointRouteBuilder)
     {
-
+      // Configuramos una ruta HTTP POST en la URL "/api/ticket".
+      // Minimal APIs (característica de .NET) nos permite inyectar dependencias directamente en los parámetros.
+      // Aquí inyectamos el cuerpo de la petición (TicketCreateRequest), el mediador (IMediator) y el token de cancelación.
+      endpointRouteBuilder.MapPost("/api/ticket", async (TicketCreateRequest ticketCreateRequest, IMediator mediator, CancellationToken cancellation) =>
+      {
+        // 1. Encapsulamos los datos de entrada en un "Comando" (Command).
+        // Este comando representa la intención de crear un ticket.
+        var command = new TicketCreateCommand(ticketCreateRequest);
+        
+        // 2. Enviamos el comando a MediatR. MediatR buscará automáticamente el "Handler" 
+        // (TicketCreateCommandHandler) que sabe cómo procesar este comando y lo ejecutará.
+        var result = await mediator.Send(command);
+        
+        // 3. Devolvemos una respuesta HTTP 200 OK al cliente, incluyendo el resultado de la operación.
+        return Results.Ok(result);
+      });
     }
 
     /// <summary>
@@ -143,7 +158,7 @@ namespace Ticketing.command.Features.Tickets
         await _eventModelRepository.InsertOneAsync(eventModel, session, cancellationToken);
 
         // Confirmar la transacción — el evento queda persistido de forma permanente
-        await _eventModelRepository.CommintTransactionAsync(session, cancellationToken);
+        await _eventModelRepository.CommitTransactionAsync(session, cancellationToken);
 
         // Liberar los recursos de la sesión (importante para evitar fugas de conexión)
         _eventModelRepository.DisoseSession(session);

@@ -86,13 +86,13 @@ namespace Ticketing.command.Infrastructure.Repositories
     /// Confirma la transacción: hace permanentes todas las escrituras realizadas.
     /// Si esto falla (ej: conflicto de red), se debería llamar a RollbackTransactionAsync.
     /// </summary>
-    public Task CommintTransactionAsync(IClientSessionHandle session, CancellationToken cancellationToken) => session.CommitTransactionAsync(cancellationToken);
+    public Task CommitTransactionAsync(IClientSessionHandle session, CancellationToken cancellationToken) => session.CommitTransactionAsync(cancellationToken);
 
     /// <summary>
     /// Libera los recursos de la sesión (cierra la conexión de sesión con MongoDB).
     /// Siempre debe llamarse en un bloque finally para evitar fugas de recursos.
     /// </summary>
-    public void DisoseSession(IClientSessionHandle session)
+    public void DisposeSession(IClientSessionHandle session)
       => session.Dispose();
 
     /// <summary>

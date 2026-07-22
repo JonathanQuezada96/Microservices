@@ -30,7 +30,7 @@ namespace Ticketing.command.Domain.Abstracts
     /// Confirma (hace permanentes) todas las operaciones realizadas dentro de la transacción.
     /// Si esto falla, se debe llamar a RollbackTransactionAsync.
     /// </summary>
-    Task CommintTransactionAsync(IClientSessionHandle session, CancellationToken cancellationToken);
+    Task CommitTransactionAsync(IClientSessionHandle session, CancellationToken cancellationToken);
 
     /// <summary>
     /// Revierte (deshace) todas las operaciones de la transacción en curso.
@@ -42,6 +42,6 @@ namespace Ticketing.command.Domain.Abstracts
     /// Libera los recursos de la sesión.
     /// Equivalente a cerrar la conexión de la sesión con MongoDB.
     /// </summary>
-    void DisoseSession(IClientSessionHandle session);
+    void DisposeSession(IClientSessionHandle session);
   }
 }
