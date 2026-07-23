@@ -17,12 +17,12 @@ namespace Ticketing.command.Application.Models
     /// Cadena de conexión completa a MongoDB (ej: "mongodb://localhost:27017/?replicaSet=rs0").
     /// Se registra por separado bajo "ConnectionStrings:MongoDb" en appsettings.json.
     /// </summary>
-    public string ConnectionString { get; set; } = string.Empty;
+    public required string ConnectionString { get; set; } = string.Empty;
 
     /// <summary>
     /// Nombre de la base de datos a la que el microservicio se conecta (ej: "ticketingApp").
     /// </summary>
-    public string Database { get; set; } = string.Empty;
+    public required string Database { get; set; } = string.Empty;
   }
 }
 

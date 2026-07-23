@@ -1,11 +1,12 @@
 using Common.Core.Events;
+using Common.Core.Producers;
 using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
 using Ticketing.command.Application.Agregates;
 using Ticketing.command.Domain.Abstracts;
 using Ticketing.command.Domain.EventModels;
-using Ticketing.command.Domain.Persistence;
 using Ticketing.command.Infrastructure.EventSourcings;
+using Ticketing.command.Infrastructure.Persistence;
 using Ticketing.command.Infrastructure.Repositories;
 
 namespace Ticketing.command.Infrastructure
@@ -54,6 +55,7 @@ namespace Ticketing.command.Infrastructure
 
       services.AddTransient<IeventStore, EventStore>();
       services.AddTransient<IEventSourcingHandler<TicketAggregate>, TicketingEventSourcingHandler>();
+      services.AddScoped<IEventProducer, TicketEventProducer>();
 
       return services;
     }

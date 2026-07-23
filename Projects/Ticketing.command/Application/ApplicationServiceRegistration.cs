@@ -31,6 +31,9 @@ namespace Ticketing.command.Application
       services.Configure<MongoSettings>(
           configuration.GetSection(nameof(MongoSettings)));
 
+      services.Configure<KafkaSettings>(
+          configuration.GetSection(nameof(KafkaSettings)));
+
       // --- REGISTRO DE MEDIATR ---
       // MediatR implementa el patrón Mediator: desacopla quién envía un comando/query
       // de quién lo procesa. El endpoint solo hace mediator.Send(command) sin saber

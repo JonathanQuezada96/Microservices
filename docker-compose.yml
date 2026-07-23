@@ -1,15 +1,26 @@
-version: "3.4" #version del yaml
+version: "3.4"
+
+# ==================================================================================================
+# ARCHIVO DE ORQUESTACIÓN DE CONTENEDORES (DOCKER COMPOSE)
+# Aquí se define toda la infraestructura que necesitan nuestros microservicios para funcionar localmente.
+# ==================================================================================================
 
 services:
-  mongodb: #nombre general del servicio
-    image: mongo:7.0 #servicio a levantar
-    container_name: mongodb #Nombre del contenedor
-    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+  # ----------------------------------------------------------------------------------------------
+  # MONGODB: Base de datos NoSQL usada como nuestro "Event Store" (Almacén de eventos).
+  # Guarda cada evento de dominio como un documento JSON de forma secuencial.
+  # ----------------------------------------------------------------------------------------------
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb
+    # Iniciamos Mongo como un "Replica Set" (rs0). Las transacciones en MongoDB SOLO funcionan en replica sets.
+    command: [ "--replSet", "rs0", "--bind_ip_all", "--port", "27017" ]
     ports:
       - 27017:27017
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    healthcheck: #test de revision de que todo está ok 
+    healthcheck:
+      # Este script inicializa automáticamente el Replica Set apenas arranca el contenedor.
       test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'host.docker.internal:27017'}]}) }" | mongosh --port 27017 --quiet
       interval: 5s
       timeout: 30s
@@ -20,12 +31,122 @@ services:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
 
+  # ----------------------------------------------------------------------------------------------
+  # ZOOKEEPER: Servicio de coordinación distribuida.
+  # Kafka clásico (sin KRaft) depende obligatoriamente de Zookeeper para llevar el control
+  # del clúster, los brokers vivos y el estado de los tópicos.
+  # ----------------------------------------------------------------------------------------------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.3
+    container_name: zookeeper
+    tmpfs: "/zktmp"
+    restart: always
+    ports:
+      - "2181:2181"
+    volumes:
+      - "zookeeper_data:/bitnami"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181 # Puerto por el que Kafka se comunicará con Zookeeper
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_INIT_LIMIT: 10
+      ZOOKEEPER_SYNC_LIMIT: 5
+      ZOOKEEPER_4LW_COMMANDS_WHITELIST: "ruok,stat,conf,isro,mntr,wchc,wchp,wchx"
+
+  # ----------------------------------------------------------------------------------------------
+  # KAFKA: Nuestro "Message Broker" (Bus de Eventos).
+  # El microservicio de Command publica eventos aquí. El microservicio de Query los lee desde aquí
+  # para actualizar su propia base de datos (Postgres). Permite comunicación asíncrona y robusta.
+  # ----------------------------------------------------------------------------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.6.3
+    container_name: kafka
+    ports:
+      - "9092:9092"   # Puerto de comunicación interna (entre contenedores)
+      - "29092:29092" # Puerto expuesto hacia nuestra máquina Host (localhost)
+    restart: always
+    volumes:
+      - "kafka_data:/bitnami"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      
+      # Configuraciones de red (Listeners) cruciales para que Kafka sea accesible desde
+      # fuera de Docker (tu código de Visual Studio) y desde dentro de Docker.
+      KAFKA_CFG_LISTENERS: INTERNAL://:9092, EXTERNAL://0.0.0.0:29092
+      KAFKA_CFG_ADVERTISED_LISTENERS: INTERNAL://kafka:9092, EXTERNAL://localhost:29092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT, EXTERNAL:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CFG_AUTO_CREATE_TOPIC_ENABLE: 'true'
+      ALLOW_PLAINTEXT_LISTENER: 'yes'
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_LISTENERS: "INTERNAL://:9092,EXTERNAL://:29092"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:9092,EXTERNAL://localhost:29092"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+
+      # Factor de replicación en 1 porque solo tenemos 1 nodo (es ambiente local)
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+    depends_on:
+      - zookeeper # Kafka no puede arrancar hasta que Zookeeper esté listo
+
+  # ----------------------------------------------------------------------------------------------
+  # KAFKA-UI: Interfaz web visual para Apache Kafka.
+  # Te permite entrar a http://localhost:8080 para ver los mensajes que fluyen por el broker,
+  # crear tópicos, ver particiones, etc. Es excelente para debugging (ver que el Productor mandó bien el mensaje).
+  # ----------------------------------------------------------------------------------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: kafkaui
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+
+  # ----------------------------------------------------------------------------------------------
+  # POSTGRESQL: Base de datos Relacional.
+  # Típicamente en CQRS, la base de datos de "Lectura" (Query Side) es relacional o altamente optimizada
+  # para hacer SELECTs y JOINs rápidos. Aquí guardaremos el "Materialized View" final de los tickets.
+  # ----------------------------------------------------------------------------------------------
+  postgres:
+    image: postgres:16.0
+    container_name: postgresql
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=clean_architecture
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    ports:
+      -  5432:5432
+
+# ==================================================================================================
+# VOLUMENES PERSISTENTES: 
+# Docker destruye datos al borrar contenedores. Declarar "volumes" asegura que los datos
+# de MongoDB, Kafka y Postgres sobrevivan a un reinicio de la computadora o un docker-compose down.
+# ==================================================================================================
 volumes:
   mongodb_data:
     driver: local
   mongodb_config:
     driver: local
+  kafka_data:
+    driver: local
+  zookeeper_data:
+    driver: local
+  postgres_data:
+    driver: local
 
 networks:
   default:
     name: microserviceNetwork
+

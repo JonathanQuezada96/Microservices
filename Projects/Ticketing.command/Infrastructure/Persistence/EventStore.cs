@@ -1,16 +1,26 @@
 using Common.Core.Events;
+using Common.Core.Producers;
+using Microsoft.Extensions.Options;
 using MongoDB.Driver;
+using Ticketing.command.Application.Models;
 using Ticketing.command.Domain.Abstracts;
 using Ticketing.command.Domain.EventModels;
 
-namespace Ticketing.command.Domain.Persistence
+namespace Ticketing.command.Infrastructure.Persistence
 {
   public class EventStore : IeventStore
   {
     private readonly IEventModelRepository _eventModelRepository;
-    public EventStore(IEventModelRepository eventModelRepository)
+    private readonly KafkaSettings _kafkaSettings;
+    private readonly IEventProducer _eventProducer;
+    public EventStore(
+                      IEventModelRepository eventModelRepository,
+                      IOptions<KafkaSettings> kafkaSettings,
+                      IEventProducer eventProducer)
     {
       _eventModelRepository = eventModelRepository;
+      _kafkaSettings = kafkaSettings.Value;
+      _eventProducer = eventProducer;
     }
     public async Task<List<BaseEvent>> GetEventsAsync(string aggregateId, CancellationToken cancellation)
     {
@@ -42,7 +52,7 @@ namespace Ticketing.command.Domain.Persistence
         version++;
         @event.Version = version;
         var evenType = @event.GetType().Name;
-        
+
         // Empaqueta el evento de dominio en el modelo de base de datos (EventModel)
         var eventModel = new EventModel
         {
@@ -53,9 +63,11 @@ namespace Ticketing.command.Domain.Persistence
           EventData = @event
         };
         await AddEventStore(eventModel, cancellation);
+        var topic = _kafkaSettings.Topic ?? throw new Exception("No se encuentra el topic");
+        await _eventProducer.ProduceAsync(topic, @event);
       }
     }
-    
+
     // Inserta un EventModel asegurando atomicidad mediante transacciones de MongoDB.
     private async Task AddEventStore(EventModel eventModel, CancellationToken cancellation)
     {
@@ -65,7 +77,9 @@ namespace Ticketing.command.Domain.Persistence
         _eventModelRepository.BeginTransaction(session);
         await _eventModelRepository.InsertOneAsync(eventModel, session, cancellation);
         await _eventModelRepository.CommitTransactionAsync(session, cancellation);
-      } catch (Exception) {
+      }
+      catch (Exception)
+      {
         await _eventModelRepository.RollbackTransactionAsync(session, cancellation);
         throw;
       }
