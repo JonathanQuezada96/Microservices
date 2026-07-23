@@ -1,4 +1,5 @@
 using MongoDB.Driver;
+using System.Linq.Expressions;
 using Ticketing.command.Domain.Common;
 
 namespace Ticketing.command.Domain.Abstracts
@@ -30,5 +31,7 @@ namespace Ticketing.command.Domain.Abstracts
     /// transacción actual y puede revertirse si algo falla.
     /// </summary>
     Task InsertOneAsync(TDocument document, IClientSessionHandle sessionHandle, CancellationToken cancellationToken);
+
+    Task<IEnumerable<TDocument>> FilterByAsync(Expression<Func<TDocument, bool>> filterExpression, CancellationToken cancellationToken);
   }
 }

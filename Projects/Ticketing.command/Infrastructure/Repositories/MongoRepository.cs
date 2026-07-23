@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
+using System.Linq.Expressions;
 using Ticketing.command.Application.Models;
 using Ticketing.command.Domain.Abstracts;
 using Ticketing.command.Domain.Common;
@@ -110,5 +111,14 @@ namespace Ticketing.command.Infrastructure.Repositories
     /// Equivalente al ROLLBACK de SQL. Se llama en el bloque catch cuando ocurre un error.
     /// </summary>
     public Task RollbackTransactionAsync(IClientSessionHandle clientSession, CancellationToken cancellationToken) => clientSession.AbortTransactionAsync(cancellationToken);
+
+    public async Task<IEnumerable<TDocument>> FilterByAsync(
+    Expression<Func<TDocument, bool>> filterExpression,
+    CancellationToken cancellationToken)
+    {
+      return await _collection
+          .Find(filterExpression)
+          .ToListAsync(cancellationToken);
+    }
   }
 }

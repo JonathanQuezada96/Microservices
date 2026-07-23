@@ -1,8 +1,11 @@
 using Common.Core.Events;
 using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
+using Ticketing.command.Application.Agregates;
 using Ticketing.command.Domain.Abstracts;
 using Ticketing.command.Domain.EventModels;
+using Ticketing.command.Domain.Persistence;
+using Ticketing.command.Infrastructure.EventSourcings;
 using Ticketing.command.Infrastructure.Repositories;
 
 namespace Ticketing.command.Infrastructure
@@ -48,6 +51,9 @@ namespace Ticketing.command.Infrastructure
       // IMongoClient es thread-safe y costoso de crear, por eso es Singleton.
       // La cadena de conexión viene de "ConnectionStrings:MongoDb" en appsettings.json.
       services.AddSingleton<IMongoClient, MongoClient>(sp => new MongoClient(configuration.GetConnectionString("MongoDb")));
+
+      services.AddTransient<IeventStore, EventStore>();
+      services.AddTransient<IEventSourcingHandler<TicketAggregate>, TicketingEventSourcingHandler>();
 
       return services;
     }

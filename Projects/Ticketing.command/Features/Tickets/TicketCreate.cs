@@ -3,6 +3,8 @@ using Common.Core.Events;
 using FluentValidation;
 using MediatR;
 using MongoDB.Driver;
+using Ticketing.command.Application.Agregates;
+using Ticketing.command.Domain.Abstracts;
 using Ticketing.command.Domain.EventModels;
 using Ticketing.command.Features.Apis;
 using static Ticketing.command.Features.Tickets.TicketCreate;
@@ -24,8 +26,9 @@ namespace Ticketing.command.Features.Tickets
       endpointRouteBuilder.MapPost("/api/ticket", async (TicketCreateRequest ticketCreateRequest, IMediator mediator, CancellationToken cancellation) =>
       {
         // 1. Encapsulamos los datos de entrada en un "Comando" (Command).
-        // Este comando representa la intención de crear un ticket.
-        var command = new TicketCreateCommand(ticketCreateRequest);
+        // Este comando representa la intención de crear un ticket
+        var id = Guid.CreateVersion7(DateTimeOffset.UtcNow).ToString();
+        var command = new TicketCreateCommand(id, ticketCreateRequest);
         
         // 2. Enviamos el comando a MediatR. MediatR buscará automáticamente el "Handler" 
         // (TicketCreateCommandHandler) que sabe cómo procesar este comando y lo ejecutará.
@@ -41,10 +44,10 @@ namespace Ticketing.command.Features.Tickets
     /// Usa "Primary Constructor" de C# 12 para inicializar las propiedades en una sola línea.
     /// 'sealed' evita que esta clase sea heredada — es intencional porque es un DTO simple.
     /// </summary>
-    public sealed class TicketCreateRequest(string username, string typeError, string detailError)
+    public sealed class TicketCreateRequest(string username, int typeError, string detailError)
     {
       public string Username { get; set; } = username;
-      public string TypeError { get; set; } = typeError;
+      public int TypeError { get; set; } = typeError;
       public string DetailError { get; set; } = detailError;
     }
   }
@@ -59,7 +62,7 @@ namespace Ticketing.command.Features.Tickets
   /// 'record' es ideal para comandos porque son inmutables por diseño.
   /// IRequest&lt;bool&gt; le indica a MediatR que este comando devuelve un bool como resultado.
   /// </summary>
-  public record TicketCreateCommand(TicketCreateRequest ticketCreateRequest) : IRequest<bool>;
+  public record TicketCreateCommand( string Id, TicketCreateRequest ticketCreateRequest) : IRequest<bool>;
 
   /// <summary>
   /// Validador del COMANDO (capa externa de validación).
@@ -75,6 +78,7 @@ namespace Ticketing.command.Features.Tickets
     public TicketCreateCommandValidator()
     {
       // SetValidator encadena el validador del objeto anidado (TicketCreateRequest)
+      RuleFor(x => x.Id).NotEmpty().WithMessage("The id should´nt be empty");
       RuleFor(x => x.ticketCreateRequest).SetValidator(new TicketCreateValidator());
     }
   }
@@ -89,93 +93,34 @@ namespace Ticketing.command.Features.Tickets
     public TicketCreateValidator()
     {
       // NotEmpty() rechaza null, string vacío ("") y solo espacios en blanco
-      RuleFor(x => x.Username).NotEmpty().WithMessage("There is not a username, please sign it");
+      RuleFor(x => x.Username).NotEmpty().WithMessage("There is not a username, please sign it").EmailAddress().WithMessage("Debe ser un email");
+      RuleFor(x => x.TypeError).NotEmpty().WithMessage("Debe existir el tipo de error").InclusiveBetween(1, 5).WithMessage("El rango del error es de 1 a 5");
       RuleFor(x => x.DetailError).NotEmpty().WithMessage("There is not a detail error, please sign it");
     }
   }
 
   /// <summary>
-  /// Handler del comando — aquí vive la lógica de negocio real.
+  /// Handler del comando — aquí orquestamos el flujo de dominio.
   ///
   /// MediatR invoca Handle() automáticamente cuando alguien llama a mediator.Send(command).
-  /// Usa "Primary Constructor" de C# 12 para inyección de dependencias sin boilerplate.
+  /// Usa "Primary Constructor" de C# 12 para inyectar el EventSourcingHandler.
   ///
-  /// Flujo completo:
-  ///   1. AutoMapper convierte el DTO de entrada (TicketCreateRequest) al evento de dominio (TicketCreatedEvent).
-  ///   2. Se construye el EventModel (el "sobre" que va al Event Store).
-  ///   3. Se abre una sesión y transacción en MongoDB.
-  ///   4. Se inserta el evento dentro de la transacción.
-  ///   5. Si todo ok → Commit. Si algo falla → Rollback.
+  /// Flujo refactorizado (DDD + Event Sourcing):
+  ///   1. Se instancia el Agregado (TicketAggregate) usando el comando. Esto genera el primer 
+  ///      evento de dominio (TicketCreatedEvent) de forma interna.
+  ///   2. El EventSourcingHandler delega al EventStore la persistencia de esos eventos nuevos.
+  ///   De esta forma, este Handler queda completamente limpio y no sabe nada de MongoDB.
   /// </summary>
-  public sealed class TicketCreateCommandHandler(IEventModelRepository eventModelRepository, IMapper mapper)
+  public sealed class TicketCreateCommandHandler(IEventSourcingHandler<TicketAggregate> eventSourcingHandler)
     : IRequestHandler<TicketCreateCommand, bool>
   {
-    // Campos privados readonly para guardar las dependencias inyectadas.
-    // Aunque el primary constructor los asigna automáticamente, es buena práctica
-    // declararlos explícitamente para mayor claridad y acceso interno.
-    private readonly IEventModelRepository _eventModelRepository = eventModelRepository;
-    private readonly IMapper _mapper = mapper;
-
-    /// <summary>
-    /// Método principal que MediatR invoca al recibir un TicketCreateCommand.
-    /// CancellationToken permite cancelar la operación si el cliente se desconecta.
-    /// </summary>
+    private readonly IEventSourcingHandler<TicketAggregate> 
+      _eventSourcingHandler = eventSourcingHandler;
     public async Task<bool> Handle(TicketCreateCommand request, CancellationToken cancellationToken)
     {
-      // PASO 1: Mapeo del DTO al evento de dominio usando AutoMapper.
-      // CreateMap<TicketCreateRequest, TicketCreatedEvent>() en MappingProfile define el mapeo.
-      // Esto desacopla la capa de presentación (request HTTP) del dominio (evento).
-      var ticketEventData = _mapper.Map<TicketCreatedEvent>(request.ticketCreateRequest);
-
-      // PASO 2: Construir el EventModel (el registro que va al Event Store en MongoDB).
-      var eventModel = new EventModel
-      {
-        TimeStamp = DateTime.UtcNow,
-
-        // Guid.CreateVersion7 genera un UUID v7 que incluye el timestamp en los bits más significativos,
-        // lo que lo hace ordenable cronológicamente — ideal para Event Stores.
-        AggregateIdentifier = Guid.CreateVersion7(DateTimeOffset.UtcNow).ToString(),
-
-        AggregateType = "TicketAggregate", // Nombre del tipo de agregado al que pertenece el evento
-        Version = 1,                        // Primera versión del evento en este agregado
-
-        // Nota: hay un typo "TicketCreationEvanet" → debería ser "TicketCreationEvent"
-        EventType = "TicketCreationEvanet",
-
-        EventData = ticketEventData          // El evento de dominio real con los datos del ticket
-      };
-
-      // PASO 3: Iniciar sesión y transacción en MongoDB.
-      // La sesión es obligatoria para poder usar transacciones en MongoDB Replica Set.
-      IClientSessionHandle session = await _eventModelRepository.BeginSessionAsync(cancellationToken);
-
-      try
-      {
-        // Inicio de la transacción — las operaciones siguientes son atómicas
-        _eventModelRepository.BeginTransaction(session);
-
-        // Insertar el evento en la colección "eventStores" dentro de la transacción
-        await _eventModelRepository.InsertOneAsync(eventModel, session, cancellationToken);
-
-        // Confirmar la transacción — el evento queda persistido de forma permanente
-        await _eventModelRepository.CommitTransactionAsync(session, cancellationToken);
-
-        // Liberar los recursos de la sesión (importante para evitar fugas de conexión)
-        _eventModelRepository.DisoseSession(session);
-
-        return true; // Operación exitosa
-      }
-      catch (Exception ex)
-      {
-        // Si algo falló (error de red, violación de constraints, etc.):
-        // ROLLBACK → deshace la inserción, el evento NO queda en la base de datos.
-        // Esto garantiza consistencia: o se guarda completo, o no se guarda nada.
-        await _eventModelRepository.RollbackTransactionAsync(session, cancellationToken);
-        _eventModelRepository.DisoseSession(session);
-
-        // TODO: loguear el error (ex.Message) en lugar de solo retornar false silenciosamente
-        return false;
-      }
+      var aggregate = new TicketAggregate(request);
+      await _eventSourcingHandler.SaveAsync(aggregate, cancellationToken);
+      return true;
     }
   }
 }

@@ -17,5 +17,6 @@ namespace Ticketing.command.Domain.EventModels
   /// </summary>
   public interface IEventModelRepository : IMongoRepository<EventModel>
   {
+    
   }
 }

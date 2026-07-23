@@ -32,7 +32,7 @@ namespace Common.Core.Events
     /// Categoría o tipo del error (opcional). Ej: "NullReferenceException", "Timeout", etc.
     /// El símbolo ? indica que puede ser null si el usuario no lo especificó.
     /// </summary>
-    public string? TypeError { get; set; }
+    public int TypeError { get; set; }
 
     /// <summary>
     /// Descripción detallada del error. Campo obligatorio ('required').
