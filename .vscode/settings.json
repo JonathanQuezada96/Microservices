@@ -6,5 +6,18 @@
         "MONGODB",
         "tmpfs",
         "zktmp"
+    ],
+    "sqltools.connections": [
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "docker_postgres",
+            "database": "cleanarchitecture",
+            "username": "postgres",
+            "password": "postgres"
+        }
     ]
 }
