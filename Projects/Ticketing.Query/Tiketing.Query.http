@@ -1,0 +1,6 @@
+@Tiketing.Query_HostAddress = http://localhost:5101
+
+GET {{ Tiketing.Query_HostAddress }}/weatherforecast/
+Accept: application/json
+
+###

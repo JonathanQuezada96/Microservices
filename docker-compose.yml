@@ -130,7 +130,7 @@ services:
       -  5432:5432
 
 # ==================================================================================================
-# VOLUMENES PERSISTENTES: 
+# VOLÚMENES PERSISTENTES:
 # Docker destruye datos al borrar contenedores. Declarar "volumes" asegura que los datos
 # de MongoDB, Kafka y Postgres sobrevivan a un reinicio de la computadora o un docker-compose down.
 # ==================================================================================================
