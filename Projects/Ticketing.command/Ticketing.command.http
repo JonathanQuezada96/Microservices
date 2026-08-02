@@ -9,7 +9,7 @@ Accept: application/json
 content-type: application/json
 
 {
-  "username": "Luis Suare<",
-  "typeError": "Error Desktop",
-  "detailError": "No jala tu mamada"
+  "username": "SuperPuta@gmail.com",
+  "typeError": 3,
+  "detailError": "Esta apagada tu putada"
 }
