@@ -27,6 +27,24 @@ app.UseAuthorization();
 // Mapea automáticamente todas las rutas definidas en los Controladores de la aplicación.
 app.MapControllers();
 
+// MEJORA: Exponemos el endpoint de Health Checks en la ruta /health.
+// Responde con JSON indicando el estado de cada dependencia registrada:
+//   - "Healthy": todo funciona correctamente.
+//   - "Degraded": funciona pero con advertencias.
+//   - "Unhealthy": hay un problema crítico (ej: PostgreSQL no responde).
+//
+// Ejemplo de respuesta JSON en /health:
+// {
+//   "status": "Healthy",
+//   "entries": {
+//     "postgresql": { "status": "Healthy", "duration": "00:00:00.012" }
+//   }
+// }
+//
+// Docker Compose / Kubernetes usa este endpoint en "healthcheck" para decidir
+// si reiniciar el contenedor o marcarlo como listo para recibir tráfico.
+app.MapHealthChecks("/health");
+
 // Método de extensión propio que aplica las migraciones de EF Core automáticamente al iniciar.
 // Esto crea o actualiza las tablas en PostgreSQL sin necesidad de ejecutar 'dotnet ef database update' manualmente.
 await app.ApplyMigration();

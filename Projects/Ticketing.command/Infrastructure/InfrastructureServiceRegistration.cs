@@ -35,6 +35,7 @@ namespace Ticketing.command.Infrastructure
       // ya que BaseEvent es abstracta y no se puede instanciar directamente.
       BsonClassMap.RegisterClassMap<BaseEvent>();
       BsonClassMap.RegisterClassMap<TicketCreatedEvent>(); // Registrar cada evento concreto aquí
+      BsonClassMap.RegisterClassMap<TicketUpdatedEvent>(); // Registrar cada evento concreto aquí
 
       // --- REGISTRO DEL REPOSITORIO GENÉRICO ---
       // Scoped: se crea UNA instancia por petición HTTP (request).

@@ -16,14 +16,21 @@ namespace Common.Core.Events
   // que se usa para identificar el tipo de evento durante la deserialización en Kafka.
   public class TicketUpdatedEvent : BaseEvent
   {
+    // Constructor por defecto que registra el nombre del tipo de evento,
+    // mantiene la consistencia con TicketCreatedEvent y permite
+    // la inicialización mediante object initializers.
+    public TicketUpdatedEvent() : base(nameof(TicketUpdatedEvent))
+    {
+    }
+
     // El constructor recibe el tipo de evento (ej: "TicketUpdatedEvent")
     // y lo pasa a la clase base para que quede registrado en el campo "Type".
     public TicketUpdatedEvent(string type) : base(type)
     {
     }
 
-    // Estado actual del ticket (ej: "Abierto", "En progreso", "Cerrado")
-    public string? Status { get; set; }
+    // Tipo de ticket actualizado (ej: 1, 2, 3, 4, 5)
+    public int? TicketType { get; set; }
 
     // Descripción o detalle actualizado del ticket
     public string? Description { get; set; }

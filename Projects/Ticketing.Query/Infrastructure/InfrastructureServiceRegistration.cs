@@ -4,6 +4,7 @@ using Tiketing.Query.Domain.Abstractions;
 using Tiketing.Query.Domain.Employees;
 using Tiketing.Query.Infrastructure.Consumer;
 using Tiketing.Query.Infrastructure.Persistence;
+using Tiketing.Query.Infrastructure.Persistence.Interceptors;
 using Tiketing.Query.Infrastructure.Repos;
 
 namespace Tiketing.Query.Infrastructure
@@ -14,6 +15,9 @@ namespace Tiketing.Query.Infrastructure
   {
     public static IServiceCollection RegisterInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
+
+      services.AddSingleton<AuditEntitiesInterceptor>();
+
       // Leemos la cadena de conexión a PostgreSQL desde appsettings.json.
       // El operador ?? throw lanza una excepción inmediatamente si no está configurada,
       // evitando errores crípticos más adelante en tiempo de ejecución.
@@ -28,8 +32,11 @@ namespace Tiketing.Query.Infrastructure
       //     automáticamente en la base de datos (ej: FirstName → first_name).
       Action<DbContextOptionsBuilder> configureDbContext;
       configureDbContext = o => 
-                           o.UseLazyLoadingProxies().UseNpgsql(connectionString)
-                            .UseSnakeCaseNamingConvention();
+                           o.UseLazyLoadingProxies()
+                           .UseNpgsql(connectionString)
+                           .UseSnakeCaseNamingConvention()
+                           .AddInterceptors(new AuditEntitiesInterceptor()
+                           );
 
       // Registramos el DbContext principal para peticiones HTTP normales (Scoped = una instancia por request).
       // Nota: esta versión NO usa LazyLoading, la versión de arriba (configureDbContext) sí lo usa
@@ -66,6 +73,20 @@ namespace Tiketing.Query.Infrastructure
 
       // Registra el EventHandler que traduce eventos de Kafka en comandos MediatR.
       services.AddScoped<IEventHandler, Handlers.EventHandler>();
+
+      // MEJORA: Health Checks — endpoints para monitorear la salud del servicio.
+      // Son esenciales en entornos con Docker/Kubernetes: el orquestador llama a /health
+      // periódicamente para saber si el contenedor está saludable.
+      //
+      // AddHealthChecks() habilita el sistema de health checks de .NET.
+      // AddDbContextCheck<T>(): verifica que el DbContext puede conectarse a PostgreSQL
+      //   ejecutando una query simple (SELECT 1). Si falla, el servicio se marca como "Unhealthy".
+      services.AddHealthChecks()
+        .AddDbContextCheck<TicketDbContext>(
+          name: "postgresql",        // Nombre que aparecerá en la respuesta JSON del endpoint.
+          failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
+          tags: new[] { "database", "postgresql" } // Tags para filtrar checks por categoría.
+        );
 
       return services;
     }

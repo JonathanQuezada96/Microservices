@@ -9,7 +9,18 @@ Accept: application/json
 content-type: application/json
 
 {
-  "username": "SuperPuta@gmail.com",
+  "username": "Soygay@gmail.com",
   "typeError": 3,
-  "detailError": "Esta apagada tu putada"
+  "detailError": "Necesito pito"
+}
+
+
+Put {{ Ticketing.command_HostAddress }}/api/tickets/019fc40e-58f3-743e-b38d-5bcf913b33f1
+Accept: application/json
+content-type: application/json
+
+{
+  "ticketType": 5,
+  "description": "Sigue comiendo pito",
+  "username": "Mataputos@gmail.com"
 }
