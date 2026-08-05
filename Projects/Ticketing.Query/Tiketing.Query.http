@@ -1,6 +1,17 @@
-@Tiketing.Query_HostAddress = http://localhost:5101
+@Tiketing.Query_HostAddress = http://localhost:5006
 
-GET {{ Tiketing.Query_HostAddress }}/weatherforecast/
+### Obtener todos los tickets
+### Este endpoint consulta PostgreSQL y devuelve la lista completa.
+
+GET {{ Tiketing.Query_HostAddress }}/api/tickets
+Accept: application/json
+
+###
+
+### Obtener un ticket por su ID
+### Reemplaza el GUID por el ID de un ticket real que hayas creado.
+
+GET {{ Tiketing.Query_HostAddress }}/api/tickets/019fc3a9-1a40-78eb-a352-2ec7eecced55
 Accept: application/json
 
 ###

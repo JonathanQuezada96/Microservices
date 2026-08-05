@@ -30,7 +30,7 @@ namespace Common.Core.Events
     }
 
     // Tipo de ticket actualizado (ej: 1, 2, 3, 4, 5)
-    public int? TicketType { get; set; }
+    public int TicketType { get; set; }
 
     // Descripción o detalle actualizado del ticket
     public string? Description { get; set; }

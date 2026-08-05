@@ -92,5 +92,41 @@ namespace Ticketing.command.Application.Agregates
       _id = @event.ID;
 
     }
+
+    // =========================================================================
+    // MÉTODO DE DOMINIO: DeleteTicket
+    // =========================================================================
+    // Este método representa la acción de "eliminar" o desactivar un ticket.
+    // Al igual que en EditTicket, no borramos información de la base de datos de verdad,
+    // sino que emitimos un EVENTO diciendo "Esto fue eliminado".
+    public void DeleteTicket(string userName)
+    {
+      // REGLA DE NEGOCIO: No puedes borrar un ticket que ya está inactivo/eliminado.
+      if (!Active)
+      {
+        throw new InvalidOperationException("Cannot delete an inactive ticket.");
+      }
+
+      // RaiseEvent crea el evento y lo pone en la lista de cosas por guardar.
+      RaiseEvent(new TicketDeletedEvent
+      {
+        ID = Id,
+        Username = userName
+      });
+    }
+
+    // =========================================================================
+    // MÉTODO APPLY: Para TicketDeletedEvent
+    // =========================================================================
+    // Este método se manda a llamar automáticamente después del RaiseEvent anterior,
+    // o cuando estamos "rehidratando" (recargando) el ticket desde la base de datos.
+    public void Apply(TicketDeletedEvent @event)
+    {
+      _id = @event.ID;
+      // Aquí cambiamos el estado interno del agregado.
+      // Al poner Active = false, las reglas de negocio (como EditTicket o DeleteTicket)
+      // ya no permitirán hacer más cambios a este ticket en el futuro.
+      Active = false;
+    }
   }
  }

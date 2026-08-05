@@ -14,6 +14,7 @@ content-type: application/json
   "detailError": "Necesito pito"
 }
 
+### Update ticket
 
 Put {{ Ticketing.command_HostAddress }}/api/tickets/019fc40e-58f3-743e-b38d-5bcf913b33f1
 Accept: application/json
@@ -21,6 +22,13 @@ content-type: application/json
 
 {
   "ticketType": 5,
-  "description": "Sigue comiendo pito",
-  "username": "Mataputos@gmail.com"
+  "description": "Eres un putote, ya vi como mamas",
+  "username": "poradict@gmail.com"
 }
+
+### Delete ticket
+
+DELETE {{ Ticketing.command_HostAddress }}/api/tickets/019fc3a9-1a40-78eb-a352-2ec7eecced55?username=admin@gmail.com
+Accept: application/json
+
+### Get tickets

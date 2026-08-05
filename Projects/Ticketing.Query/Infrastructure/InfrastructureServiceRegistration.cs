@@ -1,94 +1,134 @@
+// =========================================================================
+// CLASE: InfrastructureServiceRegistration
+// PROPÓSITO: Registra todos los servicios de infraestructura en el contenedor
+// de Inyección de Dependencias (DI) de .NET.
+//
+// ¿Qué es la Inyección de Dependencias?
+// Es un patrón donde las clases no crean sus dependencias directamente,
+// sino que .NET las "inyecta" en el constructor automáticamente.
+// Esto permite cambiar implementaciones sin tocar el código que las usa.
+//
+// ¿Qué es un "lifetime" en DI?
+//   - Singleton: se crea UNA sola instancia para toda la vida de la app.
+//   - Scoped: se crea una instancia por petición HTTP (o por scope manual).
+//   - Transient: se crea una instancia nueva cada vez que se pide.
+//
+// Este método de extensión se llama desde Program.cs:
+//   builder.Services.RegisterInfrastructureServices(builder.Configuration);
+// =========================================================================
+using Common.Core.Consumers;
 using Confluent.Kafka;
 using Microsoft.EntityFrameworkCore;
+using System;
+using Ticketing.Query.Infrastructure.Consumers;
 using Tiketing.Query.Domain.Abstractions;
 using Tiketing.Query.Domain.Employees;
-using Tiketing.Query.Infrastructure.Consumer;
 using Tiketing.Query.Infrastructure.Persistence;
 using Tiketing.Query.Infrastructure.Persistence.Interceptors;
 using Tiketing.Query.Infrastructure.Repos;
 
-namespace Tiketing.Query.Infrastructure
+namespace Ticketing.Query.Infrastructure;
+
+public static class InfrastructureServiceRegistration
 {
-  // Clase encargada de registrar todos los servicios e infraestructura (BD, Repositorios)
-  // en el contenedor de Inyección de Dependencias (DI).
-  public static class InfrastructureServiceRegistration
+  // Método de extensión sobre IServiceCollection.
+  // 'this IServiceCollection services' permite llamarlo como:
+  //   services.RegisterInfrastructureServices(configuration)
+  public static IServiceCollection RegisterInfrastructureServices(
+    this IServiceCollection services,
+    IConfiguration configuration
+  )
   {
-    public static IServiceCollection RegisterInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+    // =========================================================================
+    // INTERCEPTOR DE AUDITORÍA
+    // =========================================================================
+    // AuditEntitiesInterceptor es un interceptor de EF Core que se ejecuta
+    // automáticamente ANTES de cada SaveChanges.
+    // Rellena campos como CreatedOn, CreatedBy, LastModificateOn en las entidades.
+    // Es Singleton porque no tiene estado que cambie por request.
+    services.AddSingleton<AuditEntitiesInterceptor>();
+
+    // Leemos la cadena de conexión a PostgreSQL desde appsettings.json.
+    // ?? throw: si no existe la configuración, fallamos rápido con un error claro.
+    var connectionString = configuration
+                       .GetConnectionString("PostgresConnectionString")
+                       ?? throw new ArgumentException("PostgresConnectionString no está configurado.");
+
+    // =========================================================================
+    // DbContext Factory — para el UnitOfWork en contextos fuera de HTTP
+    // =========================================================================
+    // Esta configuración define CÓMO se construirá el DbContext.
+    // UseLazyLoadingProxies(): activa la carga perezosa de propiedades 'virtual'.
+    // UseNpgsql(): usa el driver de PostgreSQL.
+    // UseSnakeCaseNamingConvention(): convierte PascalCase a snake_case automáticamente.
+    //   Ej: "TicketType" → columna "ticket_type" en PostgreSQL.
+    Action<DbContextOptionsBuilder> configureDbContext = o => o
+      .UseLazyLoadingProxies()
+      .UseNpgsql(connectionString)
+      .UseSnakeCaseNamingConvention()
+      .AddInterceptors(new AuditEntitiesInterceptor());
+
+    // =========================================================================
+    // REGISTRO DEL DbContext (EF Core)
+    // =========================================================================
+    // AddDbContext registra el TicketDbContext como Scoped (una instancia por request HTTP).
+    // NOTA: La configuración aquí es simplificada (sin LazyLoading) para el contexto normal.
+    // El DatabaseContextFactory (abajo) usa la configuración completa para el consumer de Kafka.
+    services.AddDbContext<TicketDbContext>(opt =>
     {
+      opt.UseNpgsql(connectionString).UseSnakeCaseNamingConvention();
+    });
 
-      services.AddSingleton<AuditEntitiesInterceptor>();
+    // DatabaseContextFactory: permite crear instancias del DbContext fuera del ciclo
+    // de vida normal de HTTP (por ejemplo, en el ConsumerHostedService de Kafka).
+    // Es Singleton porque la factory en sí no tiene estado que cambie.
+    services.AddSingleton<DatabaseContextFactory>(
+          new DatabaseContextFactory(configureDbContext)
+    );
 
-      // Leemos la cadena de conexión a PostgreSQL desde appsettings.json.
-      // El operador ?? throw lanza una excepción inmediatamente si no está configurada,
-      // evitando errores crípticos más adelante en tiempo de ejecución.
-      var connectionString = configuration.GetConnectionString("PostgresConnectionString") 
-                           ?? throw new ArgumentException(nameof(configuration));
+    // =========================================================================
+    // REPOSITORIOS Y UNIT OF WORK
+    // =========================================================================
+    // UnitOfWork: Scoped (una instancia por request). Coordina los repositorios
+    // y asegura que todos los cambios se confirmen en una sola transacción.
+    services.AddScoped<IUnitOfWork, UnitOfWork>();
 
-      // Preparamos una acción de configuración del DbContext que:
-      //   - UseLazyLoadingProxies(): carga las propiedades de navegación (Employees, Tickets) 
-      //     automáticamente cuando se acceden por primera vez (lazy loading).
-      //   - UseNpgsql(): usa el driver de PostgreSQL.
-      //   - UseSnakeCaseNamingConvention(): convierte nombres de C# (PascalCase) a snake_case
-      //     automáticamente en la base de datos (ej: FirstName → first_name).
-      Action<DbContextOptionsBuilder> configureDbContext;
-      configureDbContext = o => 
-                           o.UseLazyLoadingProxies()
-                           .UseNpgsql(connectionString)
-                           .UseSnakeCaseNamingConvention()
-                           .AddInterceptors(new AuditEntitiesInterceptor()
-                           );
+    // GenericRepo<>: repositorio genérico para CRUD básico.
+    // typeof(IGenericRepository<>) registra el tipo genérico abierto,
+    // lo que permite que .NET resuelva IGenericRepository<Ticket>,
+    // IGenericRepository<TicketEmployee>, etc. automáticamente.
+    services.AddScoped(
+      typeof(IGenericRepository<>),
+      typeof(GenericRepo<>)
+    );
 
-      // Registramos el DbContext principal para peticiones HTTP normales (Scoped = una instancia por request).
-      // Nota: esta versión NO usa LazyLoading, la versión de arriba (configureDbContext) sí lo usa
-      // porque se pasa a la DatabaseContextFactory que el Consumer de Kafka usa en segundo plano.
-      //services.AddDbContext<TicketDbContext>(configureDbContext); // versión anterior con LazyLoading
-      services.AddDbContext<TicketDbContext>(opt =>
-      {
-        opt.UseNpgsql(connectionString).UseSnakeCaseNamingConvention();
-      });
+    // EmployeeRepository: repositorio específico de empleados con métodos propios
+    // (como GetByUsernameAsync) que el repositorio genérico no tiene.
+    services.AddScoped<IemployeeRepository, EmployeeRepository>();
 
-      // DatabaseContextFactory es Singleton porque el ComsumerHostedService (background service)
-      // la usa para crear instancias de DbContext fuera del ciclo de vida de una petición HTTP.
-      services.AddSingleton<DatabaseContextFactory>(new DatabaseContextFactory(configureDbContext));
+    // =========================================================================
+    // KAFKA CONSUMER (Comunicación entre microservicios)
+    // =========================================================================
+    // EventConsumer: Scoped — se crea un nuevo consumer por scope (por request del ConsumerHostedService).
+    services.AddScoped<IEventConsumer, EventConsumer>();
 
-      // UnitOfWork es Scoped: una instancia por request, coordina la transacción de BD.
-      services.AddScoped<IUnitOfWork, UnitOfWork>();
+    // ConsumerHostedService: el background service que arranca el consumer de Kafka.
+    // AddHostedService lo registra para que .NET lo inicie automáticamente al arrancar la app.
+    services.AddHostedService<ConsumerHostedService>();
 
-      // Registra el repositorio genérico. El typeof(IGenericRepository<>) con <> abierto
-      // permite que .NET resuelva IGenericRepository<Ticket>, IGenericRepository<TicketEmployee>, etc.
-      // automáticamente, todos usando la implementación GenericRepo<T>.
-      services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepo<>));
+    // EventHandler: Scoped — une el evento de Kafka con MediatR para procesarlo.
+    services.AddScoped<IEventHandler, Tiketing.Query.Infrastructure.Handlers.EventHandler>();
 
-      // Lee la sección "ConsumerConfig" del appsettings.json y la mapea a ConsumerConfig de Kafka.
-      // Así ComsumerHostedService recibe la configuración de Kafka (bootstrap servers, group id, etc.)
-      // automáticamente vía IOptions<ConsumerConfig>.
-      services.Configure<ConsumerConfig>(configuration.GetSection(nameof(ConsumerConfig)));
+    // =========================================================================
+    // CONFIGURACIÓN DE KAFKA
+    // =========================================================================
+    // Lee la sección "ConsumerConfig" de appsettings.json y la mapea a
+    // la clase ConsumerConfig de Confluent.Kafka (GroupId, BootstrapServers, etc.)
+    services.Configure<ConsumerConfig>(
+      configuration.GetSection(nameof(ConsumerConfig))
+    );
 
-      // Repositorio específico para Employee (extiende el genérico con GetByUsernameAsync).
-      services.AddScoped<IemployeeRepository, EmployeeRepository>();
-
-      // Registra el Consumer de Kafka como un servicio en segundo plano.
-      // .NET lo iniciará automáticamente al arrancar la app llamando a StartAsync().
-      services.AddHostedService<ComsumerHostedService>();
-
-      // Registra el EventHandler que traduce eventos de Kafka en comandos MediatR.
-      services.AddScoped<IEventHandler, Handlers.EventHandler>();
-
-      // MEJORA: Health Checks — endpoints para monitorear la salud del servicio.
-      // Son esenciales en entornos con Docker/Kubernetes: el orquestador llama a /health
-      // periódicamente para saber si el contenedor está saludable.
-      //
-      // AddHealthChecks() habilita el sistema de health checks de .NET.
-      // AddDbContextCheck<T>(): verifica que el DbContext puede conectarse a PostgreSQL
-      //   ejecutando una query simple (SELECT 1). Si falla, el servicio se marca como "Unhealthy".
-      services.AddHealthChecks()
-        .AddDbContextCheck<TicketDbContext>(
-          name: "postgresql",        // Nombre que aparecerá en la respuesta JSON del endpoint.
-          failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
-          tags: new[] { "database", "postgresql" } // Tags para filtrar checks por categoría.
-        );
-
-      return services;
-    }
+    return services;
   }
 }
+

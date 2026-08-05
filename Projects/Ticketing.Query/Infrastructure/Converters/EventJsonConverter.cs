@@ -23,7 +23,10 @@ namespace Tiketing.Query.Infrastructure.Converters
     // Retorna true cuando el tipo a convertir es BaseEvent o cualquier tipo que lo herede.
     public override bool CanConvert(Type type)
     {
-      return type.IsAssignableFrom(typeof(BaseEvent));
+      // typeof(BaseEvent).IsAssignableFrom(type): ¿hereda 'type' de BaseEvent?
+      // Ej: CanConvert(typeof(TicketCreatedEvent)) → true ✅
+      // Antes estaba invertido: type.IsAssignableFrom(typeof(BaseEvent)) → casi siempre false ❌
+      return typeof(BaseEvent).IsAssignableFrom(type);
     }
 
     // Read: lógica principal de deserialización.
@@ -49,11 +52,21 @@ namespace Tiketing.Query.Infrastructure.Converters
       var json = document.RootElement.GetRawText();
 
       // Switch expression: según el valor de "Type", deserializamos al tipo concreto correcto.
-      // Si llega un tipo desconocido, lanzamos una excepción descriptiva.
+      //
+      // IMPORTANTE: NO se pasa `options` aquí adrede.
+      // Si pasáramos `options`, el EventJsonConverter volvería a activarse para TicketCreatedEvent
+      // y TicketUpdatedEvent (porque también heredan de BaseEvent y CanConvert devuelve true),
+      // causando una recursión infinita → StackOverflowException.
+      // Sin `options`, System.Text.Json usa su comportamiento por defecto para los tipos concretos.
       return typeDiscriminator switch
       {
-        nameof(TicketCreatedEvent) => JsonSerializer.Deserialize<TicketCreatedEvent>(json, options),
-        nameof(TicketUpdatedEvent) => JsonSerializer.Deserialize<TicketUpdatedEvent>(json, options),
+        nameof(TicketCreatedEvent) => JsonSerializer.Deserialize<TicketCreatedEvent>(json),
+        nameof(TicketUpdatedEvent) => JsonSerializer.Deserialize<TicketUpdatedEvent>(json),
+        
+        // Si el "Type" dice "TicketDeletedEvent", entonces lo convertimos (deserializamos)
+        // a nuestra clase C# TicketDeletedEvent, que es la que se acaba de agregar.
+        nameof(TicketDeletedEvent) => JsonSerializer.Deserialize<TicketDeletedEvent>(json),
+        
         _ => throw new JsonException($"{typeDiscriminator} no es soportado")
       };
 

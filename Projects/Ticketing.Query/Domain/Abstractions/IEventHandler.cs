@@ -19,5 +19,9 @@ namespace Tiketing.Query.Domain.Abstractions
     // Se ejecuta cuando llega un TicketUpdatedEvent desde Kafka.
     // Responsable de actualizar el ticket existente en la base de datos de lectura.
     Task On(TicketUpdatedEvent @event);
+
+    // Se ejecuta cuando llega un TicketDeletedEvent desde Kafka.
+    // Responsable de eliminar el ticket en la base de datos de lectura.
+    Task On(TicketDeletedEvent @event);
   }
 }

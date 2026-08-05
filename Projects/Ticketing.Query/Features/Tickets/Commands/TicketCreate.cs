@@ -11,7 +11,7 @@ using Tiketing.Query.Domain.TicketTypes;
 // sino que es disparado por el EventHandler cuando llega un TicketCreatedEvent de Kafka.
 // El Query Side "replica" el ticket en PostgreSQL para poder servirlo rápido en consultas.
 
-namespace Tiketing.Query.Features.Tickets
+namespace Tiketing.Query.Features.Tickets.Commands
 {
   public sealed class TicketCreate
   {

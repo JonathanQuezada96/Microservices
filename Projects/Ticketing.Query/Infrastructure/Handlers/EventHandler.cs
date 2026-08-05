@@ -1,7 +1,9 @@
 using Common.Core.Events;
 using MediatR;
 using Tiketing.Query.Domain.Abstractions;
-using static Tiketing.Query.Features.Tickets.TicketCreate;
+using Tiketing.Query.Features.Tickets.Commands;
+using static Tiketing.Query.Features.Tickets.Commands.TicketCreate;
+using static Tiketing.Query.Features.Tickets.Commands.TicketUpdate;
 
 namespace Tiketing.Query.Infrastructure.Handlers
 {
@@ -41,9 +43,37 @@ namespace Tiketing.Query.Infrastructure.Handlers
     // Se invoca cuando llega un TicketUpdatedEvent de Kafka.
     // Aún no está implementado — lanzar NotImplementedException es una práctica común
     // como recordatorio de que esta funcionalidad está pendiente.
-    public Task On(TicketUpdatedEvent @event)
+    public async Task On(TicketUpdatedEvent @event)
     {
-      throw new NotImplementedException();
+      var ticketUpdateEvent = new TicketUpdateCommand(
+        @event.ID,
+        @event.TicketType,
+        @event.Description!,
+        @event.Username!
+      );
+      await _mediator.Send(ticketUpdateEvent);
+
+    }
+
+    // =========================================================================
+    // MÉTODO: On(TicketDeletedEvent)
+    // =========================================================================
+    // Este método se invoca automáticamente cuando nuestro Consumer de Kafka 
+    // recibe un evento de tipo "TicketDeletedEvent" proveniente del Command Side.
+    public async Task On(TicketDeletedEvent @event)
+    {
+      // 1. Extraemos los datos del evento (ID y Username) y los metemos en un Comando.
+      // El signo de exclamación (!) al final de Username es para decirle al 
+      // compilador: "Confía en mí, sé que esto no será nulo aquí".
+      var ticketDeleteEvent = new TicketDelete.TicketDeleteCommand(
+        @event.ID,
+        @event.Username!
+      );
+      
+      // 2. Usamos MediatR para enviar este comando. MediatR buscará la clase 
+      // TicketDeleteCommandHandler y le pasará este comando para que borre el 
+      // ticket de PostgreSQL.
+      await _mediator.Send(ticketDeleteEvent);
     }
   }
 }
